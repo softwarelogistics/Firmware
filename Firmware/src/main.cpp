@@ -9,7 +9,7 @@
 #define DEVICE_FIRMWARE_SKU = "GPIO001FULL";
 #define DEVICE_FIRMWARE_KEY = "GPIO001";
 
-#define VERSION "0.4.2"
+#define VERSION "0.4.4"
 
 #define DEBUG_MODE true
 
@@ -107,23 +107,26 @@ void setup()
         console.enableSerialOut(true);
     }
     else
-    {        
+    {
         consoleSerial.begin(115200, SERIAL_8N1, 5, 17);
         console.enableSerialOut(true);
     }
 
     console.println("WELCOME");
     console.println("SOFTWARE LOGISTICS FIRMWARE");
-    
-    if(BOARD_CONFIG == 1){
+
+    if (BOARD_CONFIG == 1)
+    {
         console.println("PROTOTYPE IOT MONITOR");
         firmwareSKU = "PIM001";
     }
-    else if(BOARD_CONFIG == 2) {
+    else if (BOARD_CONFIG == 2)
+    {
         console.println("COMPACT IOT MONITOR");
         firmwareSKU = "CIM001";
     }
-    else {
+    else
+    {
         console.println("UKNOWN BOARD TYPE");
     }
 
@@ -137,14 +140,14 @@ void setup()
 
     if (!twoWire.begin(21, 22, 400000))
     {
-        display.drawStr("Could not start Two Wire.");
-        console.println("Could not start two wire on pins 21 and 22");
+        display.drawStr("Could not start I2C.");
+        console.println("Could not start I2C on pins 21 and 22");
         while (true)
             ;
     }
     else
     {
-        console.println("Initialized Two Wire.");
+        console.println("Initialized I2C.");
     }
 
     if (!SPIFFS.begin(true))
@@ -187,9 +190,9 @@ void setup()
     //    gprsPort = HardwareSerial(configPins.SerialPort);7
 
     //if(configPins.UartNumber == 0) {
-        //gprsPort.begin(modemBaudRate, SERIAL_8N1, configPins.SimRx, configPins.SimTx);
-        gprsPort.begin(modemBaudRate, SERIAL_8N1);
-        gprsPort.setRxBufferSize(16 * 1024);
+    //gprsPort.begin(modemBaudRate, SERIAL_8N1, configPins.SimRx, configPins.SimTx);
+    gprsPort.begin(modemBaudRate, SERIAL_8N1);
+    gprsPort.setRxBufferSize(16 * 1024);
     //}
     /*else if(configPins.UartNumber == 1) {
         gprsPort.begin(modemBaudRate, SERIAL_8N1, configPins.SimRx, configPins.SimTx);
@@ -201,15 +204,17 @@ void setup()
         while(true);
     }*/
 
+    // Wait 5 seconds before
+
+    ledManager.setOnlineFlashRate(1);
+    ledManager.setErrFlashRate(1);
+
+    delay(5000);
+
+    ledManager.setErrFlashRate(0);
     ledManager.setOnlineFlashRate(8);
 
-    delay(1000);
-
     client.setMessageReceivedCallback(seaWolf_messagePublished_CallBack);
-
-    client.enableGPS(true);
-
-    modem.initGPS();
 
     while (!sysConfig.Commissioned)
     {
@@ -238,14 +243,14 @@ bool sendState()
 {
     if (gps != NULL)
     {
-        String gpsTopic = "gpio/gps/" + sysConfig.DeviceId;
+        String gpsTopic = "nuviot/geo/" + sysConfig.DeviceId;
 
         sendStatusUpdate("Waiting", "Sending", "Message Transmission");
 
         mqtt.publish(gpsTopic, gps->getJSON(), QOS1);
     }
 
-    String statusTopic = "hvac/gp001snsr/" + sysConfig.DeviceId;
+    String statusTopic = "nuviot/state/" + sysConfig.DeviceId;
 
     return mqtt.publish(statusTopic, payload->getJSON(), QOS1);
 }
@@ -284,26 +289,41 @@ void loop()
         {
             sensors[idx]->loop();
         }
-        
-        if (lastGPSSample == 0 || ((millis() - lastGPSSample) > sysConfig.GPSUpdateRate))
+
+        if (!sysConfig.GPSEnabled)
+        {
+            gps = NULL;
+        }
+        else if(((millis() - lastGPSSample)) > (sysConfig.GPSUpdateRate * 1000))
         {
             lastGPSSample = millis();
-            gps = modem.readGPS();
+            gps = modem.readGPS();    
         }
 
-        if (lastPing == 0 || ((millis() - lastPing) > sysConfig.PingRate))
+        if (lastPing == 0 || ((millis() - lastPing) > sysConfig.PingRate * 1000))
         {
             lastPing = millis();
 
             if (!mqtt.ping())
             {
                 ledManager.setOnlineFlashRate(8);
-                console.println("connection dropped, reconnecting");
+                ledManager.setErrFlashRate(8);
+
+                console.println("connection=lost;");
 
                 sendStatusUpdate("No MQTT Connection", "Restarting", "Message Loop", 1000);
-                while (!client.Connect(true, modemBaudRate));
+
+                int retryCount = 10;
+                while (!client.Connect(true, modemBaudRate)) {
+                    retryCount--;
+                    console.println("connection=failreconnect;");
+                    if(retryCount == 0) {
+                        hal.restart();
+                    }
+                }                    
 
                 ledManager.setOnlineFlashRate(-1);
+                ledManager.setErrFlashRate(0);
 
                 mqtt.subscribe("seawolf/" + sysConfig.DeviceId + "/#", QOS0);
 
@@ -316,7 +336,7 @@ void loop()
             ledManager.setOnlineFlashRate(-1);
         }
 
-        if (lastSend == 0 || ((millis() - lastSend) > sysConfig.SendUpdateRate && state.isValid()))
+        if (lastSend == 0 || ((millis() - lastSend) > (sysConfig.SendUpdateRate * 1000) && state.isValid()))
         {
             lastSend = millis();
             sendCount++;
