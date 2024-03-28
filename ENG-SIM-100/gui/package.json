@@ -1,0 +1,21 @@
+{
+    "dependencies": {
+        "jquery": "^3.4.1",
+        "parcel": "2.11.0",
+        "parcel-plugin-inliner": "^1.0.14"
+    },
+    "devDependencies": {
+        "rimraf":"5.0.5",
+        "run":"1.5.0",
+        "cpx":"1.5.0"
+    },
+    "scripts": {
+        "dev": "parcel index.html",
+        "cleanDist":"rimraf dist",
+        "cleanData":"rimraf ../data",
+        "packageIt":"parcel build index.html --no-minify",
+        "moveFile": "cpx dist/index.html ../data",
+        "build": "npm run cleanDist && npm run cleanData && npm run packageIt && npm run moveFile"
+        
+    }
+}
